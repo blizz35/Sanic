@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python')]
+datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python'), ('*.py', '.')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('mssql_python')
