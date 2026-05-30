@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from tkinter import ttk
 import tkinter as tk
 from mssql_python import connect 
-from _types import NoneType
+# from _types import NoneType
 
 class page(ABC):
     '''
@@ -48,6 +48,12 @@ class page(ABC):
         textLen = len(text)
         if textLen >= maxChars and event.keysym not in {'BackSpace', 'Delete', 'Return'}: 
             return 'break'
+        
+    # def setup(self, msg):
+    #     pass
+    #
+    # def pull(self, event):
+    #     pass
     
     def __init__(self, frame):
         '''
@@ -55,10 +61,98 @@ class page(ABC):
         '''        
         self.frame = frame
         
-        @property
-        @abstractmethod
-        def conn(self):
-            pass
+        # @property
+        # @abstractmethod
+        # def conn(self):
+        #     pass
+        
+class oneInPage(page, ABC):
+    
+    def setup(self, msg):
+        self.msg = msg
+        
+        self.clearScreen()
+        resetButton = ttk.Button(self.frame, text = 'Reset', command = lambda: self.invByDealerSetup(''))
+        resetButton.grid(row = 0, column = 2)
+        
+        self.idLabel = ttk.Label(self.frame)
+        self.idLabel.grid(row = 1, column = 1)
+        self.idInput = tk.Text(self.frame, height = 1, width = 6)    
+        self.idInput.grid(row = 2, column = 1)
+        
+        if msg == 'blank field':
+            ttk.Label(self.frame, text = 'You done goofed').grid(row = 4, column = 1)
+        elif msg == 'not a client':
+            ttk.Label(self.frame, text = 'Not a client').grid(row = 4, column = 1)
+        elif msg == 'not a number':
+            ttk.Label(self.frame, text = 'Not a number').grid(row = 4, column = 1)
+        
+        self.idInput.focus_set()
+        
+        # self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.idInputCharLimit, self.idInput))
+        # self.idInput.bind("<Return>", self.invByDealerPull, add = "+")
+        
+        self.sendButton = ttk.Button(self.frame, text = "Send")
+        self.sendButton.grid(row = 3, column = 1)
+        # sendButton.bind("<Button-1>", self.invByDealerPull)
+        
+        self.setupUpdate()
+    
+    def pull(self, event):
+        dealerID = self.idInput.get("1.0", "end-1c")
+        
+        if dealerID == '':
+            self.setup('blank field')
+        elif dealerID.isnumeric():
+            cursor = self.conn.cursor()
+            cursor.execute("select top 1 dealerID from admin..dealer where exists (select dealerid from admin..dealer where dealerid = " + dealerID + " and clientind = 1)")
+            sqlCheck = cursor.fetchone()
+            
+            if type(sqlCheck) is NoneType:
+                self.setup('not a client')
+            else:    
+                self.clearScreen()
+                
+                
+            
+                sqlQueryIn = """select case when listingtypeid = 1 then 'New' else 'Used' end, 
+                case when donotexport = 0 then 'Off Hold' else 'On Hold' end, 
+                count(vin) 
+                from dealersite..inventory 
+                where dealerid = 
+                and inventorystatusid = 1 
+                group by listingtypeid, donotexport 
+                order by listingtypeid, donotexport"""
+                
+                sqlQuery = sqlQueryIn.replace("where dealerid = ", "where dealerid = " + dealerID)
+                
+                ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
+                
+                # cursor = self.conn.cursor()
+                cursor.execute(sqlQuery)
+                
+                records = cursor.fetchall()
+                
+                formatString = self.formatTable(records)
+                
+                ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
+
+        else:
+            self.setup('not a number')
+    
+    def setupUpdate(self):
+        pass
+    
+    def pullUpdate(self):
+        pass
+    
+class twoInPage(page, ABC):
+    
+    def setup(self, msg):
+        pass
+    
+    def pull(self, event):
+        pass
 
 class homePage(page):
     
@@ -110,82 +204,92 @@ class integrationPage(page):
         ttk.Label(frame, text = 'Integrations queries and information').grid(row = 2, column = 1)
         ttk.Button(frame, text = 'Find ImportProcessorID', command = self.callImportID).grid(row = 3, column = 0)
 
-class invByDealerPage(page):
+class invByDealerPage(oneInPage):
     
-    def invByDealerSetup(self, msg):
-        self.msg = msg
-        
-        self.clearScreen()
-        resetButton = ttk.Button(self.frame, text = 'Reset', command = lambda: self.invByDealerSetup(''))
-        resetButton.grid(row = 0, column = 2)
-        
-        self.idLabel = ttk.Label(self.frame, text = "Enter DealerID here:").grid(row = 1, column = 1)
-        self.idInput = tk.Text(self.frame, height = 1, width = 6)    
-        self.idInput.grid(row = 2, column = 1)
-        
-        if msg == 'blank field':
-            ttk.Label(self.frame, text = 'You done goofed').grid(row = 4, column = 1)
-        elif msg == 'not a client':
-            ttk.Label(self.frame, text = 'Not a client').grid(row = 4, column = 1)
-        elif msg == 'not a number':
-            ttk.Label(self.frame, text = 'Not a number').grid(row = 4, column = 1)
-        
-        self.idInput.focus_set()
-        
+    def setupUpdate(self):
+        self.idLabel.configure(text = 'Enter DealerID here:')
         self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.idInputCharLimit, self.idInput))
-        self.idInput.bind("<Return>", self.invByDealerPull, add = "+")
+        self.idInput.bind("<Return>", self.pull, add = "+")
+        self.sendButton.bind("<Button-1>", self.pull)
         
-        sendButton = ttk.Button(self.frame, text = "Send")
-        sendButton.grid(row = 3, column = 1)
-        sendButton.bind("<Button-1>", self.invByDealerPull)
+    def pullUpdate(self):
+        super().pullUpdate()
+    
+    # def invByDealerSetup(self, msg):
+    #     self.msg = msg
+    #
+    #     self.clearScreen()
+    #     resetButton = ttk.Button(self.frame, text = 'Reset', command = lambda: self.invByDealerSetup(''))
+    #     resetButton.grid(row = 0, column = 2)
+    #
+    #     self.idLabel = ttk.Label(self.frame, text = "Enter DealerID here:").grid(row = 1, column = 1)
+    #     self.idInput = tk.Text(self.frame, height = 1, width = 6)    
+    #     self.idInput.grid(row = 2, column = 1)
+    #
+    #     if msg == 'blank field':
+    #         ttk.Label(self.frame, text = 'You done goofed').grid(row = 4, column = 1)
+    #     elif msg == 'not a client':
+    #         ttk.Label(self.frame, text = 'Not a client').grid(row = 4, column = 1)
+    #     elif msg == 'not a number':
+    #         ttk.Label(self.frame, text = 'Not a number').grid(row = 4, column = 1)
+    #
+    #     self.idInput.focus_set()
+    #
+    #     self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.idInputCharLimit, self.idInput))
+    #     self.idInput.bind("<Return>", self.invByDealerPull, add = "+")
+    #
+    #     sendButton = ttk.Button(self.frame, text = "Send")
+    #     sendButton.grid(row = 3, column = 1)
+    #     sendButton.bind("<Button-1>", self.invByDealerPull)
         
-    def invByDealerPull(self, event):
-        dealerID = self.idInput.get("1.0", "end-1c")
-        
-        if dealerID == '':
-            self.invByDealerSetup('blank field')
-        elif dealerID.isnumeric():
-            cursor = self.conn.cursor()
-            cursor.execute("select top 1 dealerID from admin..dealer where exists (select dealerid from admin..dealer where dealerid = " + dealerID + " and clientind = 1)")
-            sqlCheck = cursor.fetchone()
-            
-            if type(sqlCheck) is NoneType:
-                self.invByDealerSetup('not a client')
-            else:    
-                self.clearScreen()
-                
-                
-            
-                sqlQueryIn = """select case when listingtypeid = 1 then 'New' else 'Used' end, 
-                case when donotexport = 0 then 'Off Hold' else 'On Hold' end, 
-                count(vin) 
-                from dealersite..inventory 
-                where dealerid = 
-                and inventorystatusid = 1 
-                group by listingtypeid, donotexport 
-                order by listingtypeid, donotexport"""
-                
-                sqlQuery = sqlQueryIn.replace("where dealerid = ", "where dealerid = " + dealerID)
-                
-                ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
-                
-                # cursor = self.conn.cursor()
-                cursor.execute(sqlQuery)
-                
-                records = cursor.fetchall()
-                
-                formatString = self.formatTable(records)
-                
-                ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
-
-        else:
-            self.invByDealerSetup('not a number')
+    # def invByDealerPull(self, event):
+    #     dealerID = self.idInput.get("1.0", "end-1c")
+    #
+    #     if dealerID == '':
+    #         self.setup('blank field')
+    #     elif dealerID.isnumeric():
+    #         cursor = self.conn.cursor()
+    #         cursor.execute("select top 1 dealerID from admin..dealer where exists (select dealerid from admin..dealer where dealerid = " + dealerID + " and clientind = 1)")
+    #         sqlCheck = cursor.fetchone()
+    #
+    #         if type(sqlCheck) is NoneType:
+    #             self.setup('not a client')
+    #         else:    
+    #             self.clearScreen()
+    #
+    #
+    #
+    #             sqlQueryIn = """select case when listingtypeid = 1 then 'New' else 'Used' end, 
+    #             case when donotexport = 0 then 'Off Hold' else 'On Hold' end, 
+    #             count(vin) 
+    #             from dealersite..inventory 
+    #             where dealerid = 
+    #             and inventorystatusid = 1 
+    #             group by listingtypeid, donotexport 
+    #             order by listingtypeid, donotexport"""
+    #
+    #             sqlQuery = sqlQueryIn.replace("where dealerid = ", "where dealerid = " + dealerID)
+    #
+    #             ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
+    #
+    #             # cursor = self.conn.cursor()
+    #             cursor.execute(sqlQuery)
+    #
+    #             records = cursor.fetchall()
+    #
+    #             formatString = self.formatTable(records)
+    #
+    #             ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
+    #
+    #     else:
+    #         self.setup('not a number')
             
     def __init__(self, frame):
                
         self.frame = frame
         
-        self.invByDealerSetup('')
+        self.setup('')
+        # self.invByDealerSetup('')
             
 class invByGroupPage(page):
     
@@ -526,42 +630,9 @@ class importByImportPage(page):
         
 class importIDPage(page):
     
-    def importIDPull(self, event):
-        importName = self.importInput.get("1.0", "end-1c")
+    def importIDSetup(self, msg):
+        self.msg = msg
         
-        if importName == '':
-            ttk.Label(self.frame, text = 'You done goofed').grid(row = 4, column = 1)
-            # self.invByDealerSetup()
-        else:
-            # cursor = self.conn.cursor()
-            # cursor.execute("select top 1 dealerID from admin..dealer where exists (select dealerid from admin..dealer where dealerid = " + dealerID + " and clientind = 1)")
-            # sqlCheck = cursor.fetchone()
-            #
-            # if type(sqlCheck) is NoneType:
-            #     ttk.Label(self.frame, text = 'Not a client').grid(row = 4, column = 1)
-            # else:    
-            self.clearScreen()
-                
-            sqlQueryIn = """Select importname, importprocessorid
-            From integration..source_import
-            Where importname like '%
-            """
-                
-            sqlQuery = sqlQueryIn.replace("Where importname like '%", "Where importname like '%" + importName + "%'")
-                
-            ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
-              
-            cursor = self.conn.cursor()
-            cursor.execute(sqlQuery)
-                
-            records = cursor.fetchall()
-                
-            formatString = self.formatTable(records)
-               
-            ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
-        
-    def __init__(self, frame):
-        self.frame = frame
         self.clearScreen()
         resetButton = ttk.Button(self.frame, text = 'Reset', command = lambda: self.invByGroupSetup(''))
         resetButton.grid(row = 0, column = 2)
@@ -572,6 +643,52 @@ class importIDPage(page):
         self.sendButton = ttk.Button(self.frame, text = "Just Gonna Send It")
         self.sendButton.grid(row = 3, column = 2)
         
+        if msg == 'blank field':
+            ttk.Label(self.frame, text = 'You done goofed').grid(row = 4, column = 2)
+        elif msg == 'not an import':
+            ttk.Label(self.frame, text = 'No import found').grid(fow = 4, column = 2)
+        
+        self.importInput.focus_set()
+        
         self.importInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.importInput))
         self.importInput.bind("<Return>", self.importIDPull, add = '+')
         self.sendButton.bind("<Button-1>", self.importIDPull)
+    
+    def importIDPull(self, event):
+        importName = self.importInput.get("1.0", "end-1c")
+        
+        if importName == '':
+            self.importIDSetup('blank field')
+        else:
+            cursor = self.conn.cursor()
+            cursor.execute("select top 1 importprocessorid from integration..source_import where exists (select ImportProcessorID from integration..source_import where importname like '%" + importName + "%' and active = 1)")
+            sqlCheck = cursor.fetchone()
+                 
+            if type(sqlCheck) is NoneType:
+                self.importByImportSetup('not an import')
+                self.clearScreen()
+            else:                    
+                sqlQueryIn = """Select importname, importprocessorid
+                From integration..source_import
+                Where importname like '%
+                """
+                    
+                sqlQuery = sqlQueryIn.replace("Where importname like '%", "Where importname like '%" + importName + "%'")
+                    
+                ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
+                  
+                cursor = self.conn.cursor()
+                cursor.execute(sqlQuery)
+                    
+                records = cursor.fetchall()
+                    
+                formatString = self.formatTable(records)
+                   
+                ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
+        
+    def __init__(self, frame):
+        self.frame = frame
+        
+        self.importIDSetup('')
+        
+        
