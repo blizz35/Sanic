@@ -7,7 +7,7 @@ Created on May 21, 2026
 import tkinter as tk
 from tkinter import ttk
 import Pages
-
+import sys, os
 
 class Window():
     '''
@@ -23,6 +23,12 @@ class Window():
         root.title("Common Queries")
         frm = ttk.Frame(root, padding=100)
         frm.grid()
+        
+        def resource(relativePath):
+            basePath = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+            return os.path.join(basePath, relativePath)
+        
+        root.iconbitmap(resource("vincueblack.ico"))
         
         Pages.homePage(frm)
         

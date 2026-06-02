@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python'), ('*.py', '.')]
+datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python'), ('*.py', '.'), ('*.ico', '.')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('mssql_python')
@@ -53,4 +53,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['vincueblack.ico'],
 )
