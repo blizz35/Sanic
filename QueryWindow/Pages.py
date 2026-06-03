@@ -9,7 +9,7 @@ from tkinter import ttk
 import tkinter as tk
 from mssql_python import connect 
 from _types import NoneType
-from PyInstaller.compat import pywintypes
+# from PyInstaller.compat import pywintypes
 
 class page(ABC):
     '''
@@ -20,6 +20,7 @@ class page(ABC):
     idInputCharLimit = 6
     textInputCharLimit = 20
     dayInputCharLimit = 3
+    sqlInputCharLimit = 200
     
     def clearScreen(self):
         for item in self.frame.winfo_children():
@@ -132,7 +133,7 @@ class oneInPage(page, ABC):
             if type(sqlCheck) is NoneType:
                 self.setup('not an import')
             else:
-                self.pull(event, dealerID, sqlIn, inType)
+                self.pull(event, dealerID, sqlIn, inType)            
         
     def pull(self, event, dealerID, sqlIn, inputType):
         self.dealerID = dealerID
@@ -170,6 +171,10 @@ class twoInPage(page, ABC):
     def textFocus(self):
         self.textInput.focus_set()
         return 'break'
+    
+    def copyText(self):
+        self.frame.clipboard_clear()
+        self.frame.clipboard_append(self.formatString)
     
     def setup(self, msg):
         self.msg = msg
@@ -241,6 +246,8 @@ class twoInPage(page, ABC):
             #if not a number
             elif not dealerID.isnumeric():
                 self.setup('not a number')        
+        elif inCheck == 'doNotExport':
+            self.pullCheckText(event, dealerID, sqlIn, inputType)
     
     def pullCheckText(self, event, dealerId, sqlIn, inputType):
         textIn = self.textInput.get("1.0", "end-1c")
@@ -270,6 +277,17 @@ class twoInPage(page, ABC):
                 self.setup('not an import')
             else:
                 self.pull(event, dealerId, textIn, sqlIn, inType)                
+        elif inCheck == 'importExact':
+            cursor = self.conn.cursor()
+            cursor.execute("select top 1 importname from integration..source_import where exists (select ImportProcessorID from integration..source_import where importname like '" + textIn + "' and active = 1)")
+            sqlCheck = cursor.fetchone()
+                
+            #is the data entered an active import?
+            if type(sqlCheck) is NoneType:
+                self.setup('not an import')
+            else:
+                self.pull(event, dealerId, textIn, sqlIn, inType)
+            
         
     def pull(self, event, dealerId, textIn, sqlIn, inputType):
         dealerID = dealerId
@@ -280,25 +298,35 @@ class twoInPage(page, ABC):
         sqlQueryIn = sqlIn
                         
         if inputType[:inputType.find(',')] == 'dealer':
-            sqlQuery = sqlQueryIn.replace("where ih.dealerid = ", "where ih.dealerid = " + dealerID)
+            sqlQueryIn = sqlQueryIn.replace("where ih.dealerid = ", "where ih.dealerid = " + dealerID)
         elif inputType[:inputType.find(',')] == 'group':
-            sqlQuery = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
+            sqlQueryIn = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
         
         if inputType[inputType.find(',')+1:] == 'day':
-            sqlQuery = sqlQuery.replace("and ih.HistoryDate > dateadd(day, -", "and ih.HistoryDate > dateadd(day, -" + textIn + ", getDate())")    
+            sqlQueryIn = sqlQueryIn.replace("and ih.HistoryDate > dateadd(day, -", "and ih.HistoryDate > dateadd(day, -" + textIn + ", getDate())")    
         elif inputType[inputType.find(',')+1:] == 'import':
-            sqlQuery = sqlQuery.replace("and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%", "and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%" + textIn + "%')")
+            sqlQueryIn = sqlQueryIn.replace("and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%", "and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%" + textIn + "%')")
+        elif inputType[inputType.find(',')+1:] == 'importExact':
+            sqlQueryIn = sqlQueryIn.replace("where importname like '", "where importname like '" + textIn + "'")
         
         ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
         
         cursor = self.conn.cursor()
-        cursor.execute(sqlQuery)
+        cursor.execute(sqlQueryIn)
                     
         records = cursor.fetchall()
                         
         formatString = self.formatTable(records)
+        
+        if inputType[:inputType.find(',')] == 'doNotExport':
+            formatString = formatString.replace(',', '')
+            self.sql2In = self.sql2In.replace("case when", "case when " + dealerId)
+            self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
                         
-        ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
+        self.outputLabel = ttk.Label(self.frame, text = self.formatString)
+        self.outputLabel.grid(row = 1, column = 1)
+        
+        self.pullUpdate()
 
     def setupUpdate(self):
         pass
@@ -344,6 +372,9 @@ class integrationPage(page):
     
     def callImportID(self):
         importIDPage(self.frame)
+        
+    def callDoNotExport(self):
+        doNotExportPage(self.frame)
     
     def __init__(self, frame):
         '''
@@ -355,6 +386,7 @@ class integrationPage(page):
         
         ttk.Label(frame, text = 'Integrations queries and information').grid(row = 2, column = 1)
         ttk.Button(frame, text = 'Find ImportProcessorID', command = self.callImportID).grid(row = 3, column = 0)
+        ttk.Button(frame, text = 'DoNotExport transform for DMS', command = self.callDoNotExport).grid(row = 3, column = 1)
 
 class invByDealerPage(oneInPage):
     
@@ -506,7 +538,7 @@ class importIDPage(oneInPage):
             where importname like '%
             and active = 1"""
         
-        self.idLabel.configure(text = 'Enter group name here:')
+        self.idLabel.configure(text = 'Enter import name here:')
         self.idInput.configure(width = self.textInputCharLimit)
         self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.idInput))
         self.idInput.bind("<Return>", lambda event: self.pullChecks(event, sqlIn, 'import'), add = "+")
@@ -515,6 +547,37 @@ class importIDPage(oneInPage):
     def __init__(self, frame):
         self.frame = frame
         
-        # self.importIDSetup('')
         self.setup('')
                 
+class doNotExportPage(twoInPage):
+    
+    sql2In = """case when
+else isnull(i.donotexport, abs(s.autooffhold - 1)) end 
+from #data left join dealersite..inventory i on i.dealerid = #data.dealerid and i.VIN = #data.VIN and i.inventorystatusid = 1 
+left join integration..source_import_dealer s on s.dealerid = #data.dealerid and s.importprocessorid = """
+    
+    def setupUpdate(self):
+        
+        sqlIn = """select ImportProcessorID 
+            from integration..source_import 
+            where importname like '
+            and active = 1"""
+            
+        
+        
+        self.idLabel.configure(text = 'Enter case when and then statement here:')
+        self.textLabel.configure(text = 'Enter import name here:')
+        self.idInput.configure(width = int(self.sqlInputCharLimit/4))
+        self.idInput.configure(height = 4)
+        self.textInput.configure(width = self.textInputCharLimit)
+        self.textInput.bind("<Return>", lambda event: self.pullCheckID(event, sqlIn, 'doNotExport,importExact'))
+        self.idInput.bind("<Tab>", lambda event: self.textFocus())#, add = '+')
+        self.sendButton.bind("<Button-1>", lambda event: self.pullCheckID(event, sqlIn, 'doNotExport,importExact'))
+        
+    def pullUpdate(self):
+        ttk.Button(self.frame, text = 'Copy', command = self.copyText()).grid(row = 2, column = 1)
+    
+    def __init__(self, frame):
+        self.frame = frame
+        
+        self.setup('')

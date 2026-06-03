@@ -20,7 +20,7 @@ class Window():
         Constructor
         '''
         root = tk.Tk()
-        root.title("Common Queries")
+        root.title("Sanic")
         frm = ttk.Frame(root, padding=100)
         frm.grid()
         
