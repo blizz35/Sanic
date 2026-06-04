@@ -28,7 +28,7 @@ class Window():
             basePath = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
             return os.path.join(basePath, relativePath)
         
-        root.iconbitmap(resource("vincueblack.ico"))
+        root.iconbitmap(resource("sanic.ico"))
         
         Pages.homePage(frm)
         
