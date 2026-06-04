@@ -21,6 +21,7 @@ class page(ABC):
     textInputCharLimit = 20
     dayInputCharLimit = 3
     sqlInputCharLimit = 200
+    vinInputCharLimit = 17
     
     def clearScreen(self):
         for item in self.frame.winfo_children():
@@ -40,6 +41,15 @@ class page(ABC):
         recordString = recordString.replace('(', '').replace(')', '')
         recordString = recordString.replace("'", '').replace("'", '')
 
+        return recordString
+    
+    def formatTableRow(self, tableString):
+        recordString = str(tableString).replace('[', '').replace(']', '')
+        recordString = recordString.replace('), (', '\n')
+        recordString = recordString.replace('(', '').replace(')', '')
+        recordString = recordString.replace("'", '').replace("'", '')
+        recordString = recordString.replace(',', '\n')
+        
         return recordString
 
     def charCheck(self, event, charnum, fieldIn):
@@ -77,6 +87,8 @@ class oneInPage(page, ABC):
             ttk.Label(self.frame, text = 'Not a client').grid(row = 4, column = 1)
         elif msg == 'not a number':
             ttk.Label(self.frame, text = 'Not a number').grid(row = 4, column = 1)
+        elif msg == 'vin length':
+            ttk.Label(self.frame, text = 'VIN is the wrong length').grid(row = 4, column = 1)
         
         self.idInput.focus_set()
         
@@ -133,7 +145,14 @@ class oneInPage(page, ABC):
             if type(sqlCheck) is NoneType:
                 self.setup('not an import')
             else:
-                self.pull(event, dealerID, sqlIn, inType)            
+                self.pull(event, dealerID, sqlIn, inType)       
+        #is the query expecting a VIN?
+        elif inType == 'vin':
+            #is the VIN the wrong length?
+            if len(dealerID) != 17:
+                self.setup('vin length')
+            else:
+                self.pull(event, dealerID, sqlIn, inType)
         
     def pull(self, event, dealerID, sqlIn, inputType):
         self.dealerID = dealerID
@@ -151,6 +170,8 @@ class oneInPage(page, ABC):
             self.sqlQueryIn = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
         elif self.inType == 'import':
             self.sqlQueryIn = sqlQueryIn.replace("where importname like '%", "where importname like '%" + self.dealerID + "%'")
+        elif self.inType == 'vin':
+            self.sqlQueryIn = sqlQueryIn.replace("where vin = '", "where vin = '" + self.dealerID + "'")
                 
         ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
         
@@ -158,8 +179,11 @@ class oneInPage(page, ABC):
         cursor.execute(self.sqlQueryIn)
                     
         records = cursor.fetchall()
-                    
-        formatString = self.formatTable(records)
+        
+        if self.inType == 'vin':
+            formatString = self.formatTableRow(records)            
+        else:
+            formatString = self.formatTable(records)
                     
         ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
     
@@ -292,7 +316,8 @@ class twoInPage(page, ABC):
                 self.setup('not an import')
             else:
                 self.pull(event, dealerId, textIn, sqlIn, inType)
-            
+        elif inCheck == 'stock':
+            self.pull(event, dealerId, textIn, sqlIn, inType)
         
     def pull(self, event, dealerId, textIn, sqlIn, inputType):
         dealerID = dealerId
@@ -306,7 +331,7 @@ class twoInPage(page, ABC):
         sqlQueryIn = sqlIn
                         
         if inputType[:inputType.find(',')] == 'dealer':
-            sqlQueryIn = sqlQueryIn.replace("where ih.dealerid = ", "where ih.dealerid = " + dealerID)
+            sqlQueryIn = sqlQueryIn.replace("dealerid = ", "dealerid = " + dealerID)
         elif inputType[:inputType.find(',')] == 'group':
             sqlQueryIn = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
         
@@ -316,22 +341,29 @@ class twoInPage(page, ABC):
             sqlQueryIn = sqlQueryIn.replace("and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%", "and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%" + textIn + "%')")
         elif inputType[inputType.find(',')+1:] == 'importExact':
             sqlQueryIn = sqlQueryIn.replace("where importname like '", "where importname like '" + textIn + "'")
+        elif inputType[inputType.find(',')+1:] == 'stock':
+            sqlQueryIn = sqlQueryIn.replace("and stockNo = '", "and stockNo = '" + textIn + "'")
         
         ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
-
+        
         cursor = self.conn.cursor()
         cursor.execute(sqlQueryIn)
-                    
+        
         records = cursor.fetchall()
-                        
+        
         self.formatString = self.formatTable(records)
         
         if inputType[:inputType.find(',')] == 'doNotExport':
             formatString = self.formatString.replace(',', '')
             self.sql2In = self.sql2In.replace("case when", "case when " + dealerId)
             self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
-                        
-        self.outputLabel = ttk.Label(self.frame, text = self.formatString)
+        
+        if inputType[inputType.find(',')+1:] == 'stock':
+            formatString = self.formatTableRow(records)            
+        else:
+            formatString = self.formatTable(records)
+        
+        self.outputLabel = ttk.Label(self.frame, text = formatString)
         self.outputLabel.grid(row = 1, column = 1)
         
         self.pullUpdate()
@@ -361,6 +393,12 @@ class homePage(page):
         
     def callIntegrationPage(self):
         integrationPage(self.frame)
+    
+    def callPriceLookupPage(self):
+        pricingLookupPage(self.frame)
+        
+    def callPriceLookupStockPage(self):
+        pricingLookupByStockPage(self.frame)
         
     def __init__(self, frame):
         '''
@@ -375,6 +413,8 @@ class homePage(page):
         ttk.Button(frame, text = "Import history date search", command = self.callImportByDay).grid(row = 3, column = 0)
         ttk.Button(frame, text = "Import history name search", command = self.callImportByImport).grid(row = 3, column = 1)
         ttk.Button(frame, text = "Integrations Stuff", command = self.callIntegrationPage).grid(row = 1, column = 0)
+        ttk.Button(frame, text = "Pricing lookup by VIN", command = self.callPriceLookupPage).grid(row = 4, column = 0)
+        ttk.Button(frame, text = "Pricing lookup by Stock Number", command = self.callPriceLookupStockPage).grid(row = 4, column = 1)
         
 class integrationPage(page):
     
@@ -537,6 +577,69 @@ class importByImportPage(twoInPage):
         
         self.setup('')
         
+class pricingLookupPage(oneInPage):
+    
+    def setupUpdate(self):
+        
+        sqlIn = """select 'VIN: ' + vin, 
+'Price: ' + cast(isnull(price, 0) as varchar), 
+'Lot Price: ' + cast(isnull(lotprice, 0) as varchar), 
+'MSRP: ' + cast(isnull(pricemsrp, 0) as varchar), 
+'Compare to Price: ' + cast(isnull(compareprice, 0) as varchar), 
+'Cost: ' + cast(isnull(cost, 0) as varchar), 
+'Invoice Price: ' + cast(isnull(invoiceprice, 0) as varchar), 
+'Doc Fee: ' + cast(isnull(docfee, 0) as varchar), 
+'Accessory Fee: ' + cast(isnull(AccessoryFee, 0) as varchar), 
+'Special Price: ' + cast(isnull(PriceSpecial, 0) as varchar)
+from dealersite..inventory
+where vin = '
+and inventorystatusid = 1"""
+        
+        self.idLabel.configure(text = 'Enter VIN here:')
+        self.idInput.configure(width = self.vinInputCharLimit)
+        self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.vinInputCharLimit, self.idInput))
+        self.idInput.bind("<Return>", lambda event: self.pullChecks(event, sqlIn, 'vin'), add = "+")
+        self.sendButton.bind("<Button-1>", lambda event: self.pullChecks(event, sqlIn, 'vin'))
+
+    def __init__(self, frame):
+        self.frame = frame
+        
+        self.setup('')
+        
+class pricingLookupByStockPage(twoInPage):
+    
+    def setupUpdate(self):
+        self.sqlIn = """select 'VIN: ' + vin, 
+'Price: ' + cast(isnull(price, 0) as varchar), 
+'Lot Price: ' + cast(isnull(lotprice, 0) as varchar), 
+'MSRP: ' + cast(isnull(pricemsrp, 0) as varchar), 
+'Compare to Price: ' + cast(isnull(compareprice, 0) as varchar), 
+'Cost: ' + cast(isnull(cost, 0) as varchar), 
+'Invoice Price: ' + cast(isnull(invoiceprice, 0) as varchar), 
+'Doc Fee: ' + cast(isnull(docfee, 0) as varchar), 
+'Accessory Fee: ' + cast(isnull(AccessoryFee, 0) as varchar), 
+'Special Price: ' + cast(isnull(PriceSpecial, 0) as varchar)
+from dealersite..inventory
+where dealerid = 
+and stockNo = '
+and inventorystatusid = 1"""
+        
+        self.idLabel.configure(text = 'Enter dealer ID here:')
+        self.textLabel.configure(text = 'Enter stock number here:')
+        self.textInput.configure(width = self.textInputCharLimit)
+        
+        self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.idInputCharLimit, self.idInput))
+        self.idInput.bind("<Tab>", lambda event: self.textFocus(), add = '+')
+        self.textInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.textInput))
+        self.textInput.bind("<Return>", lambda event: self.pullCheckID(event, self.sqlIn, 'dealer,stock'), add = '+')
+        self.sendButton.bind("<Button-1>", lambda event: self.pullCheckID(event, self.sqlIn, 'dealer,stock'))
+
+    def __init__(self, frame):
+        self.frame = frame
+        
+        self.setup('')
+
+    
 class importIDPage(oneInPage):
     
     def setupUpdate(self):
