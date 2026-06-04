@@ -139,6 +139,9 @@ class oneInPage(page, ABC):
         self.dealerID = dealerID
         self.inType = inputType
         self.clearScreen()
+        
+        backButton = ttk.Button(self.frame, text = 'Back', command = lambda: self.setup(''))
+        backButton.grid(row = 0, column = 2)
                     
         sqlQueryIn = sqlIn
                    
@@ -173,8 +176,10 @@ class twoInPage(page, ABC):
         return 'break'
     
     def copyText(self):
+        
         self.frame.clipboard_clear()
         self.frame.clipboard_append(self.formatString)
+        ttk.Label(self.frame, text = 'Copied').grid(row = 3, column = 1)
     
     def setup(self, msg):
         self.msg = msg
@@ -294,6 +299,9 @@ class twoInPage(page, ABC):
         textIn = textIn
         inputType = inputType
         self.clearScreen()
+        
+        backButton = ttk.Button(self.frame, text = 'Back', command = lambda: self.setup(''))
+        backButton.grid(row = 0, column = 2)
                         
         sqlQueryIn = sqlIn
                         
@@ -310,16 +318,16 @@ class twoInPage(page, ABC):
             sqlQueryIn = sqlQueryIn.replace("where importname like '", "where importname like '" + textIn + "'")
         
         ttk.Label(self.frame, text = "Executing SQL").grid(row = 1, column = 1)
-        
+
         cursor = self.conn.cursor()
         cursor.execute(sqlQueryIn)
                     
         records = cursor.fetchall()
                         
-        formatString = self.formatTable(records)
+        self.formatString = self.formatTable(records)
         
         if inputType[:inputType.find(',')] == 'doNotExport':
-            formatString = formatString.replace(',', '')
+            formatString = self.formatString.replace(',', '')
             self.sql2In = self.sql2In.replace("case when", "case when " + dealerId)
             self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
                         
@@ -493,7 +501,7 @@ class importByDayPage(twoInPage):
         self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.idInputCharLimit, self.idInput))
         self.idInput.bind("<Tab>", lambda event: self.textFocus(), add = '+')
         self.textInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.textInput))
-        self.textInput.bind("<Return>", lambda event: self.pullCheckID(event, self.sqlIn, 'dealer,import'), add = '+')
+        self.textInput.bind("<Return>", lambda event: self.pullCheckID(event, self.sqlIn, 'dealer,day'), add = '+')
         self.sendButton.bind("<Button-1>", lambda event: self.pullCheckID(event, self.sqlIn, 'dealer,import'))
         
     def __init__(self, frame):
@@ -566,7 +574,7 @@ left join integration..source_import_dealer s on s.dealerid = #data.dealerid and
         
         
         self.idLabel.configure(text = 'Enter case when and then statement here:')
-        self.textLabel.configure(text = 'Enter import name here:')
+        self.textLabel.configure(text = 'Enter exact import name here:')
         self.idInput.configure(width = int(self.sqlInputCharLimit/4))
         self.idInput.configure(height = 4)
         self.textInput.configure(width = self.textInputCharLimit)
@@ -575,7 +583,7 @@ left join integration..source_import_dealer s on s.dealerid = #data.dealerid and
         self.sendButton.bind("<Button-1>", lambda event: self.pullCheckID(event, sqlIn, 'doNotExport,importExact'))
         
     def pullUpdate(self):
-        ttk.Button(self.frame, text = 'Copy', command = self.copyText()).grid(row = 2, column = 1)
+        ttk.Button(self.frame, text = 'Copy', command = lambda: self.copyText()).grid(row = 2, column = 1)
     
     def __init__(self, frame):
         self.frame = frame
