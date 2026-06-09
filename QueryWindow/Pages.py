@@ -7,8 +7,10 @@ Created on May 21, 2026
 from abc import ABC
 from tkinter import ttk
 import tkinter as tk
-from mssql_python import connect 
+import mssql_python 
+from mssql_python import OperationalError
 from _types import NoneType
+from mssql_python.exceptions import ProgrammingError
 
 class page(ABC):
     '''
@@ -16,7 +18,7 @@ class page(ABC):
     this stores the parameters as well as basic functions
     '''    
     
-    conn = connect("Server=192.168.2.19;Encrypt=yes;TrustServerCertificate=yes;Authentication=SqlPassword;UID=integration;PWD=integration")
+    conn = mssql_python.connect("Server=192.168.2.19;Encrypt=yes;TrustServerCertificate=yes;Authentication=SqlPassword;UID=integration;PWD=integration", timeout=10)
     idInputCharLimit = 6
     textInputCharLimit = 20
     dayInputCharLimit = 3
@@ -50,6 +52,7 @@ class page(ABC):
         trims the rows returned by queries into a format that is more human readable
         '''
         
+        #todo: need to better format the string into a grid
         recordString = str(tableString).replace('[', '').replace(']', '')
         recordString = recordString.replace('), (', '\n')
         recordString = recordString.replace('(', '').replace(')', '')
@@ -63,6 +66,7 @@ class page(ABC):
         this pivots the output into one column and multiple rows
         '''
         
+        #todo: need to better format output into a grid
         recordString = str(tableString).replace('[', '').replace(']', '')
         recordString = recordString.replace('), (', '\n')
         recordString = recordString.replace('(', '').replace(')', '')
@@ -138,12 +142,13 @@ class oneInPage(page, ABC):
             ttk.Label(self.frame, text = 'Not a number').grid(row = 4, column = 1)
         elif msg == 'vin length':
             ttk.Label(self.frame, text = 'VIN is the wrong length').grid(row = 4, column = 1)
+        elif msg == 'an error occurred':
+            ttk.Label(self.frame, text = 'an error occurred').grid(row = 4, column = 1)
         
         #adding submit button and setting focus
         self.idInput.focus_set()
         self.sendButton = ttk.Button(self.frame, text = "Just gonna send it")
         self.sendButton.grid(row = 3, column = 1)
-        
         #setup anything specific for the class extending oneInPage
         self.setupUpdate()
     
@@ -236,13 +241,16 @@ class oneInPage(page, ABC):
         
         #checking to see what the input field contains to add the input to the query           
         if self.inType == 'dealer':
-            self.sqlQueryIn = sqlQueryIn.replace("where dealerid = ", "where dealerid = " + self.dealerID)
+            self.sqlQueryIn = sqlQueryIn.replace("declare @dealerid int = ", "declare @dealerid int = " + self.dealerID)
         elif self.inType == 'group':
-            self.sqlQueryIn = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
+            self.sqlQueryIn = sqlQueryIn.replace("declare @groupName varchar(75) = '%", "declare @groupName varchar(75) = '%" + self.dealerID + "%'")
+            print(self.sqlQueryIn)
         elif self.inType == 'import':
-            self.sqlQueryIn = sqlQueryIn.replace("where importname like '%", "where importname like '%" + self.dealerID + "%'")
+            self.sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '%", "declare @importname varchar(75) = '%" + self.dealerID + "%'")
         elif self.inType == 'vin':
-            self.sqlQueryIn = sqlQueryIn.replace("where vin = '", "where vin = '" + self.dealerID + "'")
+            self.sqlQueryIn = sqlQueryIn.replace("@vin varchar(17) = '", "@vin varchar(17) = '" + self.dealerID + "'")
+        elif self.inType == 'importExact':
+            sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '", "declare @importname varchar(75) = '" + textIn + "'")
                 
         #todo: update with timeout to prevent query from running forever
         #todo: make this clearer with what is happening behind the scenes
@@ -250,17 +258,26 @@ class oneInPage(page, ABC):
         
         #pulling the data
         cursor = self.conn.cursor()
-        cursor.execute(self.sqlQueryIn)
-                    
-        records = cursor.fetchall()
         
-        #formatting the output and displaying it on the page
-        if self.inType == 'vin':
-            formatString = self.formatTableRow(records)            
+        try: 
+            cursor.execute(self.sqlQueryIn)
+        except OperationalError:
+            cursor.close()
+            self.setup('an error occurred')
+            
+        try:
+            records = cursor.fetchall()
+        except ProgrammingError:
+            print('invalid cursor state')
+            self.setup('an error occurred')
         else:
-            formatString = self.formatTable(records)
-                    
-        ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
+        #formatting the output and displaying it on the page
+            if self.inType == 'vin':
+                formatString = self.formatTableRow(records)            
+            else:
+                formatString = self.formatTable(records)
+                
+            ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
     
     def setupUpdate(self):
         '''
@@ -471,18 +488,18 @@ class twoInPage(page, ABC):
                         
         #checking to see what the input fields contain to add the input to the query 
         if inputType[:inputType.find(',')] == 'dealer':
-            sqlQueryIn = sqlQueryIn.replace("dealerid = ", "dealerid = " + dealerID)
+            sqlQueryIn = sqlQueryIn.replace("declare @dealerid int = ", "declare @dealerid int = " + dealerID)
         elif inputType[:inputType.find(',')] == 'group':
             sqlQueryIn = sqlQueryIn.replace("and a.name like '%", "and a.name like '%" + self.dealerID + "%'")
         
         if inputType[inputType.find(',')+1:] == 'day':
-            sqlQueryIn = sqlQueryIn.replace("and ih.HistoryDate > dateadd(day, -", "and ih.HistoryDate > dateadd(day, -" + textIn + ", getDate())")    
+            sqlQueryIn = sqlQueryIn.replace("declare @days int = ", "declare @days int = " + textIn)    
         elif inputType[inputType.find(',')+1:] == 'import':
-            sqlQueryIn = sqlQueryIn.replace("and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%", "and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%" + textIn + "%')")
+            sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '%", "declare @importname varchar(75) = '%" + textIn + "%'")
         elif inputType[inputType.find(',')+1:] == 'importExact':
-            sqlQueryIn = sqlQueryIn.replace("where importname like '", "where importname like '" + textIn + "'")
+            sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '", "declare @importname varchar(75) = '" + textIn + "'")
         elif inputType[inputType.find(',')+1:] == 'stock':
-            sqlQueryIn = sqlQueryIn.replace("and stockNo = '", "and stockNo = '" + textIn + "'")
+            sqlQueryIn = sqlQueryIn.replace("declare @stockno varchar(25) = '", "declare @stockno varchar(25) = '" + textIn + "'")
         
         #todo: update with timeout to prevent query from running forever
         #todo: make this clearer with what is happening behind the scenes
@@ -503,7 +520,7 @@ class twoInPage(page, ABC):
             self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
         
         if inputType[inputType.find(',')+1:] == 'stock':
-            formatString = self.formatTableRow(records)            
+            self.formatString = self.formatTableRow(records)            
         else:
             formatString = self.formatTable(records)
         
@@ -558,6 +575,9 @@ class homePage(page):
     def callPriceLookupStockPage(self):
         pricingLookupByStockPage(self.frame)
         
+    def calldealerInfoPage(self):
+        dealerInfoPage(self.frame)
+        
     def __init__(self, frame):
         '''
         Constructor
@@ -573,6 +593,7 @@ class homePage(page):
         ttk.Button(frame, text = "Integrations Stuff", command = self.callIntegrationPage).grid(row = 1, column = 0)
         ttk.Button(frame, text = "Pricing lookup by VIN", command = self.callPriceLookupPage).grid(row = 4, column = 0)
         ttk.Button(frame, text = "Pricing lookup by Stock Number", command = self.callPriceLookupStockPage).grid(row = 4, column = 1)
+        ttk.Button(frame, text = "Dealer info by group", command = self.calldealerInfoPage).grid(row = 5, column = 0)
         
 class integrationPage(page):
     '''
@@ -605,11 +626,12 @@ class invByDealerPage(oneInPage):
     
     def setupUpdate(self):
         #sql query
-        sqlIn = """select case when listingtypeid = 1 then 'New' else 'Used' end, 
+        sqlIn = """declare @dealerid int = 
+                select case when listingtypeid = 1 then 'New' else 'Used' end, 
                 case when donotexport = 0 then 'Off Hold' else 'On Hold' end, 
                 count(vin) 
                 from dealersite..inventory 
-                where dealerid = 
+                where dealerid = @dealerid
                 and inventorystatusid = 1 
                 group by listingtypeid, donotexport 
                 order by listingtypeid, donotexport"""
@@ -641,7 +663,8 @@ class invByGroupPage(oneInPage):
     def setupUpdate(self):
         
         #sql query
-        sqlIn = """select 
+        sqlIn = """declare @groupName varchar(75) = '%
+                select 
                 d.dealerid, 
                 d.dealername,
                 d.city,
@@ -654,7 +677,7 @@ class invByGroupPage(oneInPage):
                 left join admin..account a on a.AccountID = ad.AccountID
                 where inventorystatusid = 1
                 and d.ClientInd = 1
-                and a.name like '%
+                and a.name like @groupName
                 group by d.dealerid, d.dealername, d.city, listingtypeid, donotexport
                 order by d.dealerid, d.dealername, d.city, listingtypeid, donotexport"""
         
@@ -686,13 +709,14 @@ class invByMakePage(oneInPage):
     def setupUpdate(self):
         
         #sql query
-        sqlIn = """select
+        sqlIn = """declare @dealerid int = 
+                select
                 case when listingtypeid = 1 then 'New' else 'Used' end,
                 make,
                 case when donotexport = 0 then 'Off Hold' else 'On Hold' end,
                 count(vin)
                 from DealerSite..inventory
-                where dealerid = 
+                where dealerid = @dealerid
                 and InventoryStatusId = 1
                 group by listingtypeid, Make, donotexport
                 order by listingtypeid, make, donotexport"""
@@ -721,13 +745,15 @@ class importByDayPage(twoInPage):
     def setupUpdate(self):
         
         #sql query
-        self.sqlIn = """select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
+        self.sqlIn = """declare @dealerid int = 
+                    declare @days int = 
+                    select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
                     from integration..Import_History ih
                     left join Integration..file_version fv on ih.FileVersionID = fv.FileVersionID
                     left join Integration..File_Info fi on fv.fileid = fi.FileID
                     left join Integration..Source_Import si on si.ImportProcessorID = ih.ImportProcessorID
-                    where ih.dealerid = 
-                    and ih.HistoryDate > dateadd(day, -
+                    where ih.dealerid = @dealerid
+                    and ih.HistoryDate > dateadd(day, -@days, getDate())
                     order by ih.HistoryDate desc"""
         
         #updates
@@ -759,13 +785,15 @@ class importByImportPage(twoInPage):
     def setupUpdate(self):
         
         #sql query
-        self.sqlIn = """select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
+        self.sqlIn = """declare @dealerid int = 
+                        declare @importname varchar(75) = '%
+                        select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
                         from integration..Import_History ih
                         left join Integration..file_version fv on ih.FileVersionID = fv.FileVersionID
                         left join Integration..File_Info fi on fv.fileid = fi.FileID
                         left join Integration..Source_Import si on si.ImportProcessorID = ih.ImportProcessorID
-                        where ih.dealerid = 
-                        and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like '%
+                        where ih.dealerid = @dealerid
+                        and ih.ImportProcessorID in (select ImportProcessorID from Integration..Source_Import where ImportName like @importname)
                         and ih.HistoryDate > dateadd(day, -30, getDate())
                         order by ih.HistoryDate desc"""
         
@@ -798,19 +826,70 @@ class pricingLookupPage(oneInPage):
     def setupUpdate(self):
         
         #sql query
-        sqlIn = """select 'VIN: ' + vin, 
-'Price: ' + cast(isnull(price, 0) as varchar), 
-'Lot Price: ' + cast(isnull(lotprice, 0) as varchar), 
-'MSRP: ' + cast(isnull(pricemsrp, 0) as varchar), 
-'Compare to Price: ' + cast(isnull(compareprice, 0) as varchar), 
-'Cost: ' + cast(isnull(cost, 0) as varchar), 
-'Invoice Price: ' + cast(isnull(invoiceprice, 0) as varchar), 
-'Doc Fee: ' + cast(isnull(docfee, 0) as varchar), 
-'Accessory Fee: ' + cast(isnull(AccessoryFee, 0) as varchar), 
-'Special Price: ' + cast(isnull(PriceSpecial, 0) as varchar)
+        sqlIn = """declare @vin varchar(17) = '
+declare @dealerID int = (select dealerID
 from dealersite..inventory
-where vin = '
-and inventorystatusid = 1"""
+where vin = @vin
+and InventoryStatusId = 1)
+
+declare @priceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_currentprice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @lotPriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_lotPrice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @MSRPLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_msrp'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @comparePriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_compare'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @costLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_cost'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @invoiceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_invoice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @docFeeLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_docfee'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @accessoryLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_accessoryfee'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @specialPriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_specialprice'
+and len(name) - len(replace(name, '_', '')) = 3)
+
+select @priceLabel + ' {Price} ' + isnull(cast(price as varchar), 0.00),
+@lotPriceLabel + ' {LotPrice} ' + isnull(cast(lotprice as varchar), 0.00),
+@MSRPLabel + ' {PriceMSRP} ' + isnull(cast(priceMSRP as varchar), 0.00),
+@comparePriceLabel + ' {ComparePrice} ' + isnull(cast(ComparePrice as varchar), 0.00),
+@costLabel + ' {Cost} ' + isnull(cast(Cost as varchar), 0.00),
+@invoiceLabel + ' {InvoicePrice} ' + isnull(cast(invoiceprice as varchar), 0.00),
+@docFeeLabel + ' {DocFee} ' + isnull(cast(DocFee as varchar), 0.00),
+@accessoryLabel + ' {AccessoryFee} ' + isnull(cast(AccessoryFee as varchar), 0.00),
+isnull(@specialPriceLabel + ' {PriceSpecial} ' + isnull(cast(PriceSpecial as varchar), 0.00), 'No SpecialPrice Field')
+from dealersite..inventory
+where vin = @vin
+and InventoryStatusId = 1"""
         
         #updates
         self.idLabel.configure(text = 'Enter VIN here:')
@@ -837,20 +916,72 @@ class pricingLookupByStockPage(twoInPage):
     def setupUpdate(self):
         
         #sql query
-        self.sqlIn = """select 'VIN: ' + vin, 
-'Price: ' + cast(isnull(price, 0) as varchar), 
-'Lot Price: ' + cast(isnull(lotprice, 0) as varchar), 
-'MSRP: ' + cast(isnull(pricemsrp, 0) as varchar), 
-'Compare to Price: ' + cast(isnull(compareprice, 0) as varchar), 
-'Cost: ' + cast(isnull(cost, 0) as varchar), 
-'Invoice Price: ' + cast(isnull(invoiceprice, 0) as varchar), 
-'Doc Fee: ' + cast(isnull(docfee, 0) as varchar), 
-'Accessory Fee: ' + cast(isnull(AccessoryFee, 0) as varchar), 
-'Special Price: ' + cast(isnull(PriceSpecial, 0) as varchar)
+        self.sqlIn = """declare @stockno varchar(25) = '
+declare @dealerid int = 
+declare @vin varchar(17) = (select vin
+from DealerSite..inventory
+where dealerid = @dealerid
+and StockNo = @stockno
+and InventoryStatusId = 1)
+
+declare @priceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_currentprice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @lotPriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_lotPrice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @MSRPLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_msrp'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @comparePriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_compare'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @costLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_cost'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @invoiceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_invoice'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @docFeeLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_docfee'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @accessoryLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_accessoryfee'
+and len(name) - len(replace(name, '_', '')) = 3)
+declare @specialPriceLabel varchar(75) = (select value
+from admin..Dealer_Setting_Varchar dsv
+where dsv.dealerid = @dealerID
+and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_specialprice'
+and len(name) - len(replace(name, '_', '')) = 3)
+
+select @priceLabel + ' {Price} ' + isnull(cast(price as varchar), 0.00),
+@lotPriceLabel + ' {LotPrice} ' + isnull(cast(lotprice as varchar), 0.00),
+@MSRPLabel + ' {PriceMSRP} ' + isnull(cast(priceMSRP as varchar), 0.00),
+@comparePriceLabel + ' {ComparePrice} ' + isnull(cast(ComparePrice as varchar), 0.00),
+@costLabel + ' {Cost} ' + isnull(cast(Cost as varchar), 0.00),
+@invoiceLabel + ' {InvoicePrice} ' + isnull(cast(invoiceprice as varchar), 0.00),
+@docFeeLabel + ' {DocFee} ' + isnull(cast(DocFee as varchar), 0.00),
+@accessoryLabel + ' {AccessoryFee} ' + isnull(cast(AccessoryFee as varchar), 0.00),
+isnull(@specialPriceLabel + ' {PriceSpecial} ' + isnull(cast(PriceSpecial as varchar), 0.00), 'No SpecialPrice Field')
 from dealersite..inventory
-where dealerid = 
-and stockNo = '
-and inventorystatusid = 1"""
+where vin = @vin
+and InventoryStatusId = 1"""
         
         #updates
         self.idLabel.configure(text = 'Enter dealer ID here:')
@@ -871,7 +1002,6 @@ and inventorystatusid = 1"""
         self.frame = frame
         
         self.setup('')
-
     
 class importIDPage(oneInPage):
     '''
@@ -882,9 +1012,10 @@ class importIDPage(oneInPage):
     def setupUpdate(self):
         
         #sql query
-        sqlIn = """select importname, ImportProcessorID 
+        sqlIn = """declare @importname varchar(75) = '%
+        select importname, ImportProcessorID 
             from integration..source_import 
-            where importname like '%
+            where importname like @importname
             and active = 1"""
         
         #updates
@@ -919,9 +1050,10 @@ from #data left join dealersite..inventory i on i.dealerid = #data.dealerid and 
 left join integration..source_import_dealer s on s.dealerid = #data.dealerid and s.importprocessorid = """
         
         #sql query
-        sqlIn = """select ImportProcessorID 
+        sqlIn = """declare @importname varchar(75) = '
+        select ImportProcessorID 
             from integration..source_import 
-            where importname like '
+            where importname = @importname
             and active = 1"""
         
         #updates
@@ -947,3 +1079,39 @@ left join integration..source_import_dealer s on s.dealerid = #data.dealerid and
         
         self.setup('')
         
+class dealerInfoPage(oneInPage):
+    '''
+    takes a partial dealer group name
+    returns all dealers associated to that group and information on the dealers
+    '''
+    
+    def setupUpdate(self):
+        
+        #sql query
+        sqlIn = """declare @groupName varchar(75) = '%
+select d.dealerid, d.dealername, d.Address, d.city, d.state, a.name, isnull(string_agg(convert(nvarchar(max), m.makename), ', ') within group (order by m.makename asc), 'No Make Selected') as franchises
+from admin..account a
+left join admin..Account_Dealer ad on a.AccountID = ad.AccountID
+left join admin..Dealer d on d.dealerid = ad.DealerID
+left join admin..DealerMake dm on d.dealerid = dm.DealerID
+left join inventory..make m on m.MakeID = dm.MakeID
+where a.name like @groupName
+and d.ClientInd = 1
+group by d.dealerid, d.dealername, d.Address, d.city, d.state, a.name
+order by d.city"""
+        
+        #updates
+        self.idLabel.configure(text = 'Enter group name here:')
+        self.idInput.configure(width = self.textInputCharLimit)
+        self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.idInput))
+        self.idInput.bind("<Return>", lambda event: self.pullChecks(event, sqlIn, 'group'), add = "+")
+        self.sendButton.bind("<Button-1>", lambda event: self.pullChecks(event, sqlIn, 'group'))          
+        
+    def __init__(self, frame):
+        '''
+        constructor
+        '''
+        
+        self.frame = frame
+        
+        self.setup('')
