@@ -1,7 +1,7 @@
 '''
 Created on May 21, 2026
 
-@author: admin
+@author: Sara Rowe
 '''
 
 from abc import ABC
@@ -11,6 +11,7 @@ import mssql_python
 from mssql_python import OperationalError
 from _types import NoneType
 from mssql_python.exceptions import ProgrammingError
+from prettytable import PrettyTable
 
 class page(ABC):
     '''
@@ -53,27 +54,52 @@ class page(ABC):
         '''
         
         #todo: need to better format the string into a grid
-        recordString = str(tableString).replace('[', '').replace(']', '')
-        recordString = recordString.replace('), (', '\n')
-        recordString = recordString.replace('(', '').replace(')', '')
-        recordString = recordString.replace("'", '').replace("'", '')
+        # recordString = str(tableString).replace('[', '').replace(']', '')
+        # recordString = recordString.replace('), (', '\n')
+        # recordString = recordString.replace('(', '').replace(')', '')
+        # recordString = recordString.replace("'", '').replace("'", '')
+        
+        table = PrettyTable()
+        table.header = False
+        table.align = 'c'
+        table.padding_width = 5
+        
+        for foo in tableString:
+            table.add_row(foo)
+            table.add_divider()
 
-        return recordString
+        return table
     
-    def formatTableRow(self, tableString):
+    def formatTableRow(self, tableString, rowType):
         '''
         when a query returns one row with multiple columns
         this pivots the output into one column and multiple rows
         '''
         
-        #todo: need to better format output into a grid
-        recordString = str(tableString).replace('[', '').replace(']', '')
-        recordString = recordString.replace('), (', '\n')
-        recordString = recordString.replace('(', '').replace(')', '')
-        recordString = recordString.replace("'", '').replace("'", '')
-        recordString = recordString.replace(',', '\n')
+        recordString = ''
+        table = PrettyTable()
+        table.align = 'c'
+        table.padding_width = 5
         
-        return recordString
+        #todo: need to better format output into a grid
+        if rowType == 'pricing':
+            tableString = str(tableString).replace('[(', '').replace(')]', '')
+            tableString = tableString.split(',')
+        
+            tableDict = {}
+            for i in range(0, len(tableString) - 1, 2):
+                tableDict.update({tableString[i]: tableString[i +1]})
+        
+            recordString = list(map(list, tableDict.items()))
+        
+            table.field_names = ['Price Label {Field Name}', 'Price']
+        
+        
+            for foo in recordString:
+                table.add_row(foo)
+                table.add_divider()
+        
+        return table
 
     def charCheck(self, event, charnum, fieldIn):
         '''
@@ -250,7 +276,7 @@ class oneInPage(page, ABC):
         elif self.inType == 'vin':
             self.sqlQueryIn = sqlQueryIn.replace("@vin varchar(17) = '", "@vin varchar(17) = '" + self.dealerID + "'")
         elif self.inType == 'importExact':
-            sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '", "declare @importname varchar(75) = '" + textIn + "'")
+            sqlQueryIn = sqlQueryIn.replace("declare @importname varchar(75) = '", "declare @importname varchar(75) = '" + self.dealerID + "'")
                 
         #todo: update with timeout to prevent query from running forever
         #todo: make this clearer with what is happening behind the scenes
@@ -273,7 +299,7 @@ class oneInPage(page, ABC):
         else:
         #formatting the output and displaying it on the page
             if self.inType == 'vin':
-                formatString = self.formatTableRow(records)            
+                formatString = self.formatTableRow(records, 'pricing')            
             else:
                 formatString = self.formatTable(records)
                 
@@ -512,10 +538,12 @@ class twoInPage(page, ABC):
         records = cursor.fetchall()
         
         #formatting the output
-        self.formatString = self.formatTable(records)
+        # formatString = ''
+        
+        # print(records[0])
         
         if inputType[:inputType.find(',')] == 'doNotExport':
-            formatString = self.formatString.replace(',', '')
+            formatString = str(records[0]).replace(',', '').replace('(', '').replace(')', '')
             self.sql2In = self.sql2In.replace("case when", "case when " + dealerId)
             self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
         
@@ -526,7 +554,7 @@ class twoInPage(page, ABC):
         
         
         #displaying the output
-        self.outputLabel = ttk.Label(self.frame, text = self.formatString)
+        self.outputLabel = ttk.Label(self.frame, text = formatString)
         self.outputLabel.grid(row = 1, column = 1)
         
         self.pullUpdate()
@@ -747,7 +775,7 @@ class importByDayPage(twoInPage):
         #sql query
         self.sqlIn = """declare @dealerid int = 
                     declare @days int = 
-                    select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
+                    select si.ImportName, fi.FileName, ih.HistoryDate
                     from integration..Import_History ih
                     left join Integration..file_version fv on ih.FileVersionID = fv.FileVersionID
                     left join Integration..File_Info fi on fv.fileid = fi.FileID
@@ -787,7 +815,7 @@ class importByImportPage(twoInPage):
         #sql query
         self.sqlIn = """declare @dealerid int = 
                         declare @importname varchar(75) = '%
-                        select si.ImportName, fi.FileName, ih.FileVersionID, ih.HistoryDate
+                        select si.ImportName, fi.FileName, ih.HistoryDate
                         from integration..Import_History ih
                         left join Integration..file_version fv on ih.FileVersionID = fv.FileVersionID
                         left join Integration..File_Info fi on fv.fileid = fi.FileID
@@ -878,15 +906,15 @@ where dsv.dealerid = @dealerID
 and name like 'pricing_label_' + cast((select ListingTypeID from dealersite..inventory where vin = @vin) as varchar) + '_specialprice'
 and len(name) - len(replace(name, '_', '')) = 3)
 
-select @priceLabel + ' {Price} ' + isnull(cast(price as varchar), 0.00),
-@lotPriceLabel + ' {LotPrice} ' + isnull(cast(lotprice as varchar), 0.00),
-@MSRPLabel + ' {PriceMSRP} ' + isnull(cast(priceMSRP as varchar), 0.00),
-@comparePriceLabel + ' {ComparePrice} ' + isnull(cast(ComparePrice as varchar), 0.00),
-@costLabel + ' {Cost} ' + isnull(cast(Cost as varchar), 0.00),
-@invoiceLabel + ' {InvoicePrice} ' + isnull(cast(invoiceprice as varchar), 0.00),
-@docFeeLabel + ' {DocFee} ' + isnull(cast(DocFee as varchar), 0.00),
-@accessoryLabel + ' {AccessoryFee} ' + isnull(cast(AccessoryFee as varchar), 0.00),
-isnull(@specialPriceLabel + ' {PriceSpecial} ' + isnull(cast(PriceSpecial as varchar), 0.00), 'No SpecialPrice Field')
+select @priceLabel + ' {Price}', isnull(cast(price as varchar), 0.00),
+@lotPriceLabel + ' {LotPrice}', isnull(cast(lotprice as varchar), 0.00),
+@MSRPLabel + ' {PriceMSRP}', isnull(cast(priceMSRP as varchar), 0.00),
+@comparePriceLabel + ' {ComparePrice}', isnull(cast(ComparePrice as varchar), 0.00),
+@costLabel + ' {Cost}', isnull(cast(Cost as varchar), 0.00),
+@invoiceLabel + ' {InvoicePrice}', isnull(cast(invoiceprice as varchar), 0.00),
+@docFeeLabel + ' {DocFee}', isnull(cast(DocFee as varchar), 0.00),
+@accessoryLabel + ' {AccessoryFee}', isnull(cast(AccessoryFee as varchar), 0.00),
+isnull(@specialPriceLabel + ' {PriceSpecial}', 'No SpecialPrice Field'), isnull(cast(PriceSpecial as varchar), 0.00)
 from dealersite..inventory
 where vin = @vin
 and InventoryStatusId = 1"""
