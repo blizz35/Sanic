@@ -2,6 +2,10 @@
 Created on May 21, 2026
 
 @author: Sara Rowe
+
+todo: group pages by query type
+    ex: pricing stuff
+    add support stuff grouping
 '''
 
 from abc import ABC
@@ -298,10 +302,14 @@ class oneInPage(page, ABC):
             self.setup('an error occurred')
         else:
         #formatting the output and displaying it on the page
-            if self.inType == 'vin':
-                formatString = self.formatTableRow(records, 'pricing')            
+            if len(records) == 0:
+                self.outputLabel = ttk.Label(self.frame, text = 'No results found')
+                self.outputLabel.grid(row = 1, column = 1)
             else:
-                formatString = self.formatTable(records)
+                if self.inType == 'vin':
+                    formatString = self.formatTableRow(records, 'pricing')            
+                else:
+                    formatString = self.formatTable(records)
                 
             ttk.Label(self.frame, text = formatString).grid(row = 1, column = 1)
     
@@ -545,17 +553,20 @@ class twoInPage(page, ABC):
         if inputType[:inputType.find(',')] == 'doNotExport':
             formatString = str(records[0]).replace(',', '').replace('(', '').replace(')', '')
             self.sql2In = self.sql2In.replace("case when", "case when " + dealerId)
-            self.formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
-        
-        if inputType[inputType.find(',')+1:] == 'stock':
+            formatString = self.sql2In.replace("s.importprocessorid = ", "s.importprocessorid = " + formatString)
+        elif inputType[inputType.find(',')+1:] == 'stock':
             self.formatString = self.formatTableRow(records)            
         else:
             formatString = self.formatTable(records)
         
         
         #displaying the output
-        self.outputLabel = ttk.Label(self.frame, text = formatString)
-        self.outputLabel.grid(row = 1, column = 1)
+        if len(str(formatString)) == 0:
+            self.outputLabel = ttk.Label(self.frame, text = 'No results found')
+            self.outputLabel.grid(row = 1, column = 1)
+        else:
+            self.outputLabel = ttk.Label(self.frame, text = formatString)
+            self.outputLabel.grid(row = 1, column = 1)
         
         self.pullUpdate()
 
