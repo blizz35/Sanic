@@ -6,6 +6,8 @@ Created on May 21, 2026
 todo: group pages by query type
     ex: pricing stuff
     add support stuff grouping
+    add default DMS import filters
+    add scroll bar when over 30 lines
 '''
 
 from abc import ABC
@@ -16,6 +18,7 @@ from mssql_python import OperationalError
 from _types import NoneType
 from mssql_python.exceptions import ProgrammingError
 from prettytable import PrettyTable
+from datetime import datetime
 
 class page(ABC):
     '''
@@ -644,6 +647,9 @@ class integrationPage(page):
         
     def callDoNotExport(self):
         doNotExportPage(self.frame)
+        
+    def calldefaultImportFilters(self):
+        defaultImportFilters(self.frame)
     
     def __init__(self, frame):
         '''
@@ -656,6 +662,7 @@ class integrationPage(page):
         ttk.Label(frame, text = 'Integrations queries and information').grid(row = 2, column = 1)
         ttk.Button(frame, text = 'Find ImportProcessorID', command = self.callImportID).grid(row = 3, column = 1)
         ttk.Button(frame, text = 'DoNotExport transform for DMS', command = self.callDoNotExport).grid(row = 3, column = 2)
+        ttk.Button(frame, text = 'Default DMS Filters', command = self.calldefaultImportFilters).grid(row = 3, column = 3)
 
 class invByDealerPage(oneInPage):
     '''
@@ -1145,6 +1152,47 @@ order by d.city"""
         self.idInput.bind("<KeyPress>", lambda event: self.charCheck(event, self.textInputCharLimit, self.idInput))
         self.idInput.bind("<Return>", lambda event: self.pullChecks(event, sqlIn, 'group'), add = "+")
         self.sendButton.bind("<Button-1>", lambda event: self.pullChecks(event, sqlIn, 'group'))          
+        
+    def __init__(self, frame):
+        '''
+        constructor
+        '''
+        
+        self.frame = frame
+        
+        self.setup('')
+        
+class defaultImportFilters(oneInPage):
+    
+    def setupUpdate(self):
+        self.clearScreen()
+        
+        ttk.Button(self.frame, text = 'Back', command = self.callIntegrationPage).grid(row = 0, column = 2)
+        
+        ttk.Label(self.frame, text = 'Cost Filters:').grid(row = 2, column = 1)
+        ttk.Label(self.frame, text = 'Inventory Date Filters:').grid(row = 4, column = 1)
+        
+        newCostFilter = ttk.Label(self.frame, text = "Cost in ('0', '0.00', '') and ListingType like 'N%' and try_cast(InventoryDate as DateTime) < dateadd(day, -30, getDate())")
+        newCostFilter.grid(row = 2, column = 2)
+        ttk.Button(self.frame, text = 'Copy', command = lambda: self.copyText(newCostFilter.cget("text"))).grid(row = 2, column = 3)
+        usedCostFilter = ttk.Label(self.frame, text = "Cost in ('0', '0.00', '') and ListingType not like 'N%' and try_cast(InventoryDate as DateTime) < dateadd(day, -10, getDate())")
+        usedCostFilter.grid(row = 3, column = 2)
+        ttk.Button(self.frame, text = 'Copy', command = lambda: self.copyText(usedCostFilter.cget("text"))).grid(row = 3, column = 3)
+        
+        newDateFilter = ttk.Label(self.frame, text = "ListingType like 'N%' and try_cast(InventoryDate as DateTime) < dateadd(day, -1095, '" + datetime.today().strftime('%Y-%m-%d') + "')")
+        newDateFilter.grid(row = 4, column = 2)
+        ttk.Button(self.frame, text = 'Copy', command = lambda: self.copyText(newDateFilter.cget("text"))).grid(row = 4, column = 3)
+        usedDateFilter = ttk.Label(self.frame, text = "ListingType not like 'N%' and try_cast(InventoryDate as DateTime) < dateadd(day, -400, '" + datetime.today().strftime('%Y-%m-%d') + "')")
+        usedDateFilter.grid(row = 5, column = 2)
+        ttk.Button(self.frame, text = 'Copy', command = lambda: self.copyText(usedDateFilter.cget("text"))).grid(row = 5, column = 3)
+    def callIntegrationPage(self):
+        integrationPage(self.frame)
+        
+    def copyText(self, inText):
+        
+        self.frame.clipboard_clear()
+        self.frame.clipboard_append(inText)
+        ttk.Label(self.frame, text = 'Copied').grid(row = 6, column = 1)
         
     def __init__(self, frame):
         '''
