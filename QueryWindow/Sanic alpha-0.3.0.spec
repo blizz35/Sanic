@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python'), ('*.py', '.'), ('*.ico', '.')]
+datas = [('ddbc_bindings.cp314-amd64.pyd', 'mssql_python')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('mssql_python')
@@ -22,23 +22,12 @@ a = Analysis(
     optimize=0,
 )
 pyz = PYZ(a.pure)
-splash = Splash(
-    'hahayes.png',
-    binaries=a.binaries,
-    datas=a.datas,
-    text_pos=None,
-    text_size=12,
-    minify_script=True,
-    always_on_top=True,
-)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
-    splash,
-    splash.binaries,
     [],
     name='Sanic alpha-0.3.0',
     debug=False,
@@ -54,4 +43,10 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['sanic.ico'],
+)
+app = BUNDLE(
+    exe,
+    name='Sanic alpha-0.3.0.app',
+    icon='sanic.ico',
+    bundle_identifier=None,
 )
